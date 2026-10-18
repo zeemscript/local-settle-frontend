@@ -1,5 +1,7 @@
 import { stellarWalletKitService } from "./stellar-wallet-kit.service";
 import { ApiError, apiFetch } from "@/lib/api";
+import { walletOptions } from "../config/wallet-options";
+import { getStellarNetworkConfig } from "../config/stellar-network";
 
 // Última wallet usada
 const WALLET_ID_KEY = "wallet:provider";
@@ -77,6 +79,10 @@ export const walletService = {
         const savedPublicKey = localStorage.getItem(PUBLICKEY_KEY);
 
         if (!savedWalletId || !savedPublicKey) return null;
+        if (!walletOptions.some((wallet) => wallet.enabled && wallet.id === savedWalletId)) {
+            this.clearSession();
+            return null;
+        }
 
         try {
             stellarWalletKitService.setWallet(savedWalletId);
@@ -120,8 +126,7 @@ export const walletService = {
     },
 
     getExpectedNetwork() {
-        const raw = (process.env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet").toLowerCase();
-        return raw === "mainnet" || raw === "public" ? "mainnet" : "testnet";
+        return getStellarNetworkConfig().network;
     },
 
     async authenticate(publicKey: string): Promise<string> {
@@ -133,6 +138,12 @@ export const walletService = {
             let currentChallenge = "";
 
             try {
+            const walletId = localStorage.getItem(WALLET_ID_KEY);
+            if (!walletId) throw new Error("No wallet connected");
+            if (!stellarWalletKitService.supportsMessageSigning(walletId)) {
+                throw new Error("This wallet does not support SEP-43 message signing. Choose a wallet that supports message signing to sign in.");
+            }
+
                 const challengeResponse = await requestChallenge(publicKey);
                 currentChallenge = challengeResponse.challenge;
 
@@ -179,6 +190,10 @@ export const walletService = {
         localStorage.removeItem(WALLET_ID_KEY);
         localStorage.removeItem(PUBLICKEY_KEY);
         void stellarWalletKitService.disconnect();
+    },
+
+    forgetWalletSelection() {
+        this.clearSession();
     },
 };
 
